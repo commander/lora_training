@@ -251,3 +251,32 @@ print('ORIGINAL MODEL:')
 print(original_model_result)
 print('INSTRUCT MODEL:')
 print(instruct_model_result)
+
+# the file data/dialogue_summary_result.csv contains a pre-populated list of all model results
+# which we can use to evaluate on a larger section of data.
+results = pd.read_csv('data/dialogue_summary_result.csv')
+
+human_baseline_summaries = results['human_baseline_summaries'].values
+original_model_summaries = results['original_model_summaries'].values
+instruct_model_summaries = results['instruct_model_summaries'].values    
+
+original_model_result = rouge.compute(
+    references=human_baseline_summaries[0:len(original_model_summaries)],
+    predictions=original_model_summaries,
+    use_stemmer=True,
+    use_aggregator=True,
+)
+
+instruct_model_result = rouge.compute(
+    references=human_baseline_summaries[0:len(instruct_model_summaries)],
+    predictions=instruct_model_summaries,
+    use_stemmer=True,
+    use_aggregator=True,
+)   
+
+print('Results for all dialogues')
+print(dash_line)
+print('ORIGINAL MODEL:')
+print(original_model_result)
+print('INSTRUCT MODEL:')
+print(instruct_model_result)
