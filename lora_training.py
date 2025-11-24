@@ -144,4 +144,110 @@ def train_model(output_dir, tokenized_datasets, model):
 # train_model(output_dir, tokenized_datasets, original_model)
 
 # Create an instance of AutoModelForSeq2SeqLM class for the instruct model.
-model = AutoModelForSeq2SeqLM.from_pretrained("./flan-dialogue-summary-checkpoint-1", torch_dtype=torch.bfloat16)
+instruct__model = AutoModelForSeq2SeqLM.from_pretrained("./flan-dialogue-summary-checkpoint-1/checkpoint-9345/", dtype=torch.bfloat16)
+
+# Evaluate the model quality (human evaluation)
+index = 200
+dialogue = dataset["test"][index]["dialogue"]
+human_baseline_summary = dataset["test"][index]["summary"]
+
+prompt = f"""
+Summarize the following conversation.
+
+{dialogue}
+Summary:
+"""
+
+input_ids = tokenizer(prompt, return_tensors='pt').input_ids
+
+original_model_outputs = original_model.generate(
+    input_ids,
+    generation_config=GenerationConfig(max_new_tokens=200, num_beams=1)
+)
+original_model_text_output = tokenizer.decode(
+    original_model_outputs[0],
+    skip_special_tokens=True
+)
+
+instruct_model_outputs = instruct__model.generate(
+    input_ids,
+    generation_config=GenerationConfig(max_new_tokens=200, num_beams=1)
+)
+instruct_model_text_output = tokenizer.decode(
+    instruct_model_outputs[0],
+    skip_special_tokens=True
+)
+
+print(dash_line)
+print(f'INPUT PROMPT: \n{prompt}')
+print(dash_line)
+print(f'BASELINE HUMAN SUMMARY: \n{human_baseline_summary}\n')
+print(dash_line)
+print(f'ORIGINAL MODEL GENERATED SUMMARY - ZERO SHOT: \n{original_model_text_output}')
+print(dash_line)
+print(f'INSTRUCT MODEL GENERATED SUMMARY - ZERO SHOT: \n{instruct_model_text_output}')
+print(dash_line)
+
+
+# Evaluate the model qualitatively - with ROUGE Metric
+rouge = evaluate.load("rouge")
+
+# Generate the outputs for the sample of the test dataset 
+# (only 10 dialogues and summaries to save time)
+# and save the results
+dialogues = dataset["test"][0:10]["dialogue"]
+human_baseline_summaries = dataset["test"][0:10]["summary"]
+original_model_summaries = []
+instruct_model_summaries = []
+
+for _, dialogue in enumerate(dialogues):
+    prompt = f"""
+    Summarize the following conversation.
+
+    {dialogue}
+    Summary:
+    """
+    input_ids = tokenizer(prompt, return_tensors='pt').input_ids
+    original_model_outputs = original_model.generate(
+        input_ids,
+        generation_config=GenerationConfig(max_new_tokens=200)
+    )
+    original_model_text_output = tokenizer.decode(
+        original_model_outputs[0],
+        skip_special_tokens=True
+    )
+    original_model_summaries.append(original_model_text_output)
+
+    instruct_model_outputs = instruct__model.generate(
+        input_ids,
+        generation_config=GenerationConfig(max_new_tokens=200)
+    )
+    instruct_model_text_output = tokenizer.decode(
+        instruct_model_outputs[0],
+        skip_special_tokens=True
+    )
+    instruct_model_summaries.append(instruct_model_text_output) 
+
+zipped_summaries = list(zip(human_baseline_summaries, original_model_summaries, instruct_model_summaries))
+df = pd.DataFrame(zipped_summaries, columns=["human_baseline_summary", "original_model_summary", "instruct_model_summary"])
+
+print(df)
+
+# Evaluate the model quantitatively - with ROUGE Metric 
+original_model_result = rouge.compute(
+    references=human_baseline_summaries[0:len(original_model_summaries)],
+    predictions=original_model_summaries,
+    use_stemmer=True,
+    use_aggregator=True,
+)
+
+instruct_model_result = rouge.compute(
+    references=human_baseline_summaries[0:len(instruct_model_summaries)],
+    predictions=instruct_model_summaries,
+    use_stemmer=True,
+    use_aggregator=True,
+)   
+print('ORIGINAL MODEL:')
+print(original_model_result)
+print('INSTRUCT MODEL:')
+print(instruct_model_result)
