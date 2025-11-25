@@ -84,8 +84,8 @@ checkpoints/
 logs/
 *.log
 .ipynb_checkpoints/
-peft**/
-trained_model/**
+peft**
+trained_models/**/
 
 # Framework specific files
 # Hugging Face
