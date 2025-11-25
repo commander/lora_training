@@ -280,3 +280,75 @@ print('ORIGINAL MODEL:')
 print(original_model_result)
 print('INSTRUCT MODEL:')
 print(instruct_model_result)
+
+print('Absolute pecentage improvement of Instruct model over Human Baseline:')
+improvement = np.array(list(instruct_model_result.values())) - np.array(list(original_model_result.values()))
+for key, value in zip(instruct_model_result.keys(), improvement):
+    print(f'{key}: {value*100:.2f}')
+
+# PEFT - Parameter Efficient Fine-Tuning
+# PEFT is a form of instruction fine-tuning that uses a smaller number of parameters to fine-tune a model  
+# PEFT is a generic term that includes LoRA (Low-Rank Adaptation) and Prompt Tuning.
+
+# Setup PEFT/LoRA model for fine-tuning
+# With LoRA you freeze the underlying model parameters and only train the adapter.
+from peft import LoraConfig, get_peft_model, TaskType
+lora_config = LoraConfig(
+    task_type=TaskType.SEQ_2_SEQ_LM, # FLAN-T5
+    r=32,
+    lora_alpha=32,
+    lora_dropout=0.05,
+    bias="none",
+    target_modules=["q", "v"]
+)
+
+# add lora adapter layers/parameters to the original LLM to be trained
+peft_model = get_peft_model(original_model, lora_config)
+print(print_number_of_trainable_model_parameters(peft_model))
+
+# Train PEFT Adapter
+output_dir = f"./trained_models/peft-dialogue-summary-training-{str(int(time.time()))}"
+peft_training_args = TrainingArguments(
+    output_dir=output_dir,
+    auto_find_batch_size=True,
+    learning_rate=1e-3, # Higher learning rate than full fine-tuning
+    num_train_epochs=3,
+    logging_dir="logs",
+    logging_steps=1,
+    # max_steps=1,
+    remove_unused_columns=False,
+    # other parameters to have 
+    weight_decay=0.01,
+    # eval_strategy="epoch",
+    # save_strategy="epoch",
+    # load_best_model_at_end=True,
+    # metric_for_best_model="eval_loss",
+    # greater_is_better=False,
+    # report_to="none",
+    per_device_train_batch_size=4,  # Reduce batch size to save memory
+    gradient_accumulation_steps=1,   # Accumulate gradients to simulate larger batch
+    dataloader_pin_memory=False,      # Disable pin_memory for MPS compatibility
+    max_grad_norm=1.0,  # CLIP gradients to prevent explosion (this will help!)
+    eval_strategy='steps',  # Evaluate every N steps (older transformers uses eval_strategy)
+    eval_steps=500,  # Evaluate every 30 steps
+    save_strategy='steps',  # Save checkpoints every N steps
+    save_steps=1000,  # Save every 60 steps
+    save_total_limit=2,  # Only keep 2 most recent checkpoints to save disk space
+    load_best_model_at_end=True,  # Load the best checkpoint at the end
+    metric_for_best_model='loss',  # Use validation loss to determine best model
+)
+
+peft_trainer = Trainer(
+    model=peft_model,
+    args=peft_training_args,
+    train_dataset=tokenized_datasets["train"],
+    eval_dataset=tokenized_datasets["validation"],
+)
+
+
+peft_trainer.train()
+peft_model_path = "./trained_models/peft-dialogue-summary-checkpoint-local"
+
+# save model and tokenizer
+peft_trainer.model.save_pretrained(peft_model_path)
+tokenizer.save_pretrained(peft_model_path)
